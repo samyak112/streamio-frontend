@@ -1,12 +1,24 @@
-# React + Vite
+# WebRTC SFU Frontend (React)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the frontend client for a custom WebRTC SFU (Selective Forwarding Unit) experiment. It connects to a signaling server over WebSocket and establishes peer-to-peer media streaming via WebRTC.
 
-Currently, two official plugins are available:
+This is a **demo frontend to test [Monoport](https://github.com/samyak112/monoport)** — a project exploring NAT traversal by multiplexing STUN and SFU over a single UDP port.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Features
 
-## Expanding the ESLint configuration
+- Connects to a custom signaling server via WebSocket
+- Generates a unique `peerId` for each client using UUID
+- Sends local audio/video stream to the SFU
+- Receives remote media streams (Audio and video) from other peers
+- Handles renegotiation and ICE candidates
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Project Structure
+
+- `Stream.js`: Main React component responsible for handling media streams and signaling
+- `Watch.js`: Work in progress; currently an empty placeholder
+
+## Heads Up
+
+- No UI for joining/leaving rooms or toggling streams yet
+- No TURN server fallback (only STUN used for NAT traversal)
+- Meant for demo and experimentation purposes only

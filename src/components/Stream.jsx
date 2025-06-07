@@ -1,12 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid';
 
 function Stream() {
 	const [uuid, setUuid] = useState(null);
 	const [createConn, setCreateConn] = useState(false)
+	const [IsSDP, setISSDP] = useState(false)
 	const wsRef = useRef(null);
-	const pcRef = useRef(false);
+	const pcRef = useRef(null);
 	const testRef = useRef(0)
+
+
+	const [remoteStreams, setRemoteStreams] = useState([]);
+	const videoRefs = useRef([]);
 
 	// Generate UUID once on mount
 	useEffect(() => {
@@ -34,30 +39,51 @@ function Stream() {
 			// Assume pcRef.current is your RTCPeerConnection instance
 			// Assume 'message' is the incoming signaling message
 
-			if (message.type === 'offer' || message.type === 'answer') { // Also handle 'answer' if this client is an offerer
-				const description = new RTCSessionDescription(message);
-				pcRef.current.setRemoteDescription(description)
-					.then(() => {
-						console.log(`Remote description (${message.type}) set successfully!`);
-					})
-					.catch(error => {
-						console.error(`Error setting remote description (${message.type}):`, error);
-						// This is a critical error, connection likely won't establish
-					});
-			} else if (message.type === 'ice-candidate' || message.type === 'candidate') { // Allow for 'candidate' as well
-				if (message.candidate) { // Ensure candidate object exists
-					const candidate = new RTCIceCandidate(JSON.parse(message.candidate));
-					pcRef.current.addIceCandidate(candidate)
+			switch (message.type) {
+				case 'answer':
+					// This case handles the answer to our initial offer
+					console.log("Received answer from server");
+					pcRef.current.setRemoteDescription(new RTCSessionDescription(message))
+						.catch(error => console.error("Error setting remote description for answer:", error));
+					break;
+
+				case 'offer':
+					// This case handles renegotiation offers FROM the server
+					console.log("Received renegotiation offer from server");
+					pcRef.current.setRemoteDescription(new RTCSessionDescription(message))
+						.then(() => pcRef.current.createAnswer())
+						.then(answer => pcRef.current.setLocalDescription(answer))
 						.then(() => {
-							console.log('ICE candidate added successfully:', message.candidate);
+							// Send the answer back to the server
+							if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+								wsRef.current.send(
+									JSON.stringify({
+										type: 'answer', // We are sending an answer
+										peerId: uuid,
+										sdp: pcRef.current.localDescription.sdp,
+									})
+								);
+								console.log("Sent answer back to server");
+							}
 						})
-						.catch(error => {
-							console.error('Error adding ICE candidate:', error, message.candidate);
-							// This might not be fatal if other candidates work, but it's not good.
-						});
-				} else {
-					console.warn('Received ice-candidate message without a candidate object:', message);
-				}
+						.catch(error => console.error("Error handling offer from server:", error));
+					break;
+
+				case 'candidate':
+				case 'ice-candidate':
+					if (message.candidate) {
+						try {
+							const candidate = new RTCIceCandidate(JSON.parse(message.candidate));
+							pcRef.current.addIceCandidate(candidate)
+								.catch(error => console.error('Error adding ICE candidate:', error));
+						} catch (e) {
+							console.error("Error parsing ICE candidate JSON", e);
+						}
+					}
+					break;
+
+				default:
+					console.warn("Received unknown message type:", message.type);
 			}
 		};
 		ws.onerror = (error) => {
@@ -79,29 +105,32 @@ function Stream() {
 		const config = {
 			iceServers: [{ urls: 'stun:localhost:5000' }],
 		};
-		pcRef.current = new RTCPeerConnection(config);
 
-		pcRef.current.createDataChannel('dummy');
+		if (!pcRef.current) {
+
+			pcRef.current = new RTCPeerConnection(config);
+		}
 
 
+
+
+		pcRef.current.createDataChannel("control");
+
+		// pcRef.current.addTransceiver("audio", { direction: "sendonly" });
 		pcRef.current.ontrack = (event) => {
-			const remoteStream = new MediaStream();
+			const incomingStream = event.streams[0];
+			if (!incomingStream) return;
 
-			// Add all received tracks to the remoteStream
-			event.streams[0].getTracks().forEach(track => {
-				remoteStream.addTrack(track);
+			console.log("Track kind:", event.track.kind, "Stream ID:", incomingStream.id);
+
+			// Use a state updater to append if it's a new stream
+			setRemoteStreams((prev) => {
+				const alreadyExists = prev.some((s) => s.id === incomingStream.id);
+				return alreadyExists ? prev : [...prev, incomingStream];
 			});
-
-			// Optional: log what you got
-			console.log("Received remote track(s):", event.track.kind, event.track.id);
-
-			// Attach to a video element
-			const remoteVideo = document.getElementById('remoteVideo');
-			if (remoteVideo) {
-				remoteVideo.srcObject = remoteStream;
-			}
 		};
 
+		// if (IsSDP) {
 		pcRef.current.onicecandidate = (event) => {
 			console.log(event);
 			if (event.candidate) {
@@ -122,11 +151,29 @@ function Stream() {
 			}
 		};
 
+		// }
 
+		pcRef.current.onconnectionstatechange = () => {
+			console.log("Connection state:", pcRef.current.connectionState);
+		};
+
+
+		pcRef.current.oniceconnectionstatechange = () => {
+			console.log('ICE connection state:', pcRef.current.iceConnectionState);
+
+			if (pcRef.current.iceConnectionState === 'failed') {
+				console.error('ICE connection failed! Candidates are not connecting.');
+			} else if (pcRef.current.iceConnectionState === 'disconnected') {
+				console.warn('ICE connection disconnected.');
+			} else if (pcRef.current.iceConnectionState === 'closed') {
+				console.warn('ICE connection closed.');
+			}
+		};
 		navigator.mediaDevices.getUserMedia({ audio: true, video: true })
 			.then((stream) => {
 				// Add all tracks to the connection
 				stream.getTracks().forEach((track) => {
+					console.log('sending track', track, stream)
 					pcRef.current.addTrack(track, stream);
 				});
 
@@ -148,21 +195,47 @@ function Stream() {
 									sdp: pcRef.current.localDescription.sdp,
 								})
 							);
+
 						}
 					})
 			})
 			.catch((err) => {
 				console.error('Failed to get media:', err);
 			});
-		return () => {
-			pcRef.current.close();
-		};
-	}, [createConn]);
+	}, [createConn, IsSDP]);
 
-	return <div>
-		Check the console for ICE candidates.
-		<video id="localVideo" autoPlay playsInline muted />
-	</div>;
+	return (
+		<div>
+			{/* Local preview */}
+			<video
+				id="localVideo"
+				autoPlay
+				muted
+				playsInline
+				style={{
+					width: '300px', border: '2px solid green',
+					transform: 'scaleX(-1)',
+				}}
+			/>
+
+			{/* Remote peers */}
+			<div style={{ display: 'flex', flexWrap: 'wrap' }}>
+				{remoteStreams.map((stream, i) => (
+					<video
+						key={stream.id}
+						ref={(el) => {
+							if (el && el.srcObject !== stream) {
+								el.srcObject = stream;
+							}
+						}}
+						autoPlay
+						playsInline
+						style={{ width: '300px', margin: '10px', border: '1px solid black' }}
+					/>
+				))}
+			</div>
+		</div>
+	);
 
 }
 

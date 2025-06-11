@@ -8,7 +8,7 @@ function Stream() {
 	const wsRef = useRef(null);
 	const pcRef = useRef(null);
 	const testRef = useRef(0)
-
+	const [currentState, setCurrentState] = useState(null)
 
 	const [remoteStreams, setRemoteStreams] = useState([]);
 	const videoRefs = useRef([]);
@@ -24,7 +24,9 @@ function Stream() {
 	useEffect(() => {
 		if (!uuid) return; // exit if uuid not ready
 
-		const ws = new WebSocket('ws://127.0.0.1:8000/'); // Adjust URL as needed
+		const ws = new WebSocket('wss://monoport.xyz/sdp');
+
+		// const ws = new WebSocket('ws://127.0.0.1:8000/sdp');
 		wsRef.current = ws;
 
 		ws.onopen = () => {
@@ -68,6 +70,15 @@ function Stream() {
 						})
 						.catch(error => console.error("Error handling offer from server:", error));
 					break;
+				case 'stun-candidate':
+					console.log('this is the stun ice', message)
+
+					JSON.stringify({
+						type: 'ice-candidate',
+						peerId: uuid,
+						candidate: JSON.stringify(message.stunCandidate),
+					})
+					break;
 
 				case 'candidate':
 				case 'ice-candidate':
@@ -89,8 +100,8 @@ function Stream() {
 		ws.onerror = (error) => {
 			console.error('WebSocket error:', error);
 		};
-		ws.onclose = () => {
-			console.log('WebSocket disconnected');
+		ws.onclose = (error) => {
+			console.log('WebSocket disconnected', error);
 		};
 
 		return () => {
@@ -103,7 +114,9 @@ function Stream() {
 		if (!createConn) return; // exit if uuid not ready
 
 		const config = {
-			iceServers: [{ urls: 'stun:localhost:5000' }],
+			iceServers: [{ urls: 'stun:34.44.36.231:5000' }],
+
+			// iceServers: [{ urls: 'stun:127.0.0.1:5000' }],
 		};
 
 		if (!pcRef.current) {
@@ -154,18 +167,25 @@ function Stream() {
 		// }
 
 		pcRef.current.onconnectionstatechange = () => {
+			setCurrentState(`Connection state: ${pcRef.current.connectionState}`)
 			console.log("Connection state:", pcRef.current.connectionState);
 		};
 
 
 		pcRef.current.oniceconnectionstatechange = () => {
-			console.log('ICE connection state:', pcRef.current.iceConnectionState);
+			setCurrentState(`ICE connection state: ${pcRef.current.iceConnectionState}`);
 
 			if (pcRef.current.iceConnectionState === 'failed') {
+
+				setCurrentState(`ICE connection failed! Candidates are not connecting`);
 				console.error('ICE connection failed! Candidates are not connecting.');
 			} else if (pcRef.current.iceConnectionState === 'disconnected') {
+
+				setCurrentState(`ICE connection disconnected.`);
 				console.warn('ICE connection disconnected.');
 			} else if (pcRef.current.iceConnectionState === 'closed') {
+
+				setCurrentState(`ICE connection closed.`);
 				console.warn('ICE connection closed.');
 			}
 		};
@@ -202,7 +222,7 @@ function Stream() {
 			.catch((err) => {
 				console.error('Failed to get media:', err);
 			});
-	}, [createConn, IsSDP]);
+	}, [createConn]);
 
 	return (
 		<div>
@@ -234,6 +254,7 @@ function Stream() {
 					/>
 				))}
 			</div>
+			{currentState}
 		</div>
 	);
 

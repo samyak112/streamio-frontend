@@ -73,11 +73,12 @@ function Stream() {
 				case 'stun-candidate':
 					console.log('this is the stun ice', message)
 
-					JSON.stringify({
-						type: 'ice-candidate',
-						peerId: uuid,
-						candidate: JSON.stringify(message.stunCandidate),
-					})
+					wsRef.current.send(
+						JSON.stringify({
+							type: 'ice-candidate',
+							peerId: uuid,
+							candidate: JSON.stringify(message.stunCandidate),
+						}))
 					break;
 
 				case 'candidate':

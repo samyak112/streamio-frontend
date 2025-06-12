@@ -9,6 +9,7 @@ function Stream() {
 	const pcRef = useRef(null);
 	const testRef = useRef(0)
 	const [currentState, setCurrentState] = useState(null)
+	const stun = useRef(false)
 
 	const [remoteStreams, setRemoteStreams] = useState([]);
 	const videoRefs = useRef([]);
@@ -72,13 +73,15 @@ function Stream() {
 					break;
 				case 'stun-candidate':
 					console.log('this is the stun ice', message)
-
-					wsRef.current.send(
-						JSON.stringify({
-							type: 'ice-candidate',
-							peerId: uuid,
-							candidate: JSON.stringify(message.stunCandidate),
-						}))
+					if (!stun.current) {
+						wsRef.current.send(
+							JSON.stringify({
+								type: 'ice-candidate',
+								peerId: uuid,
+								candidate: JSON.stringify(JSON.parse(message.stunCandidate)),
+							}))
+						stun.current = true
+					}
 					break;
 
 				case 'candidate':
@@ -115,7 +118,8 @@ function Stream() {
 		if (!createConn) return; // exit if uuid not ready
 
 		const config = {
-			iceServers: [{ urls: 'stun:34.44.36.231:5000' }],
+			// iceServers: [{ urls: 'stun:34.44.36.231:5000' }],
+
 
 			// iceServers: [{ urls: 'stun:127.0.0.1:5000' }],
 		};
